@@ -55,13 +55,6 @@ class ReActAgent:
 
         for i in range(1, MAX_ITERATIONS + 1):
             resp = self.client.chat(messages, tools=self.tool_schemas)
-            # DEBUG: show raw choice for troubleshooting
-            try:
-                print(f"[DEBUG][iter {i}] resp keys={list(resp.keys())}")
-                choices = resp.get("choices") or []
-                print(f"[DEBUG][iter {i}] first_choice_preview={choices[0] if choices else None}")
-            except Exception:
-                pass
             # Extract the first choice and its message
             choices = resp.get("choices") or []
             if not choices:

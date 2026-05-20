@@ -182,12 +182,12 @@ def web_search(query: str) -> Dict[str, Optional[str]]:
             candidate_text += "\n" + (item.get('snippet') or item.get('summary') or '')
             candidate_text += "\n" + (item.get('url') or '')
 
-    # Patterns to match numeric facts and currency/rate forms
-    money_sym_re = re.compile(r"(?:\$|€|£)\s?[\d{1,3},]*(?:\d+)(?:\.\d+)?")
-    code_re = re.compile(r"([\d{1,3},]*(?:\d+)(?:\.\d+)?)\s*(USD|VND|VNĐ|EUR|GBP|JPY|BTC|ETH)\b", re.IGNORECASE)
-    rate_re = re.compile(r"1\s*(USD|VND|VNĐ|EUR|GBP|JPY|BTC|ETH)\s*=\s*([\d{1,3},]*(?:\d+)(?:\.\d+)?)\s*(USD|VND|VNĐ|EUR|GBP|JPY|BTC|ETH)", re.IGNORECASE)
-    pair_re = re.compile(r"([\d{1,3},]*(?:\d+)(?:\.\d+)?)\s*(USD|VND|VNĐ|EUR|GBP|JPY|BTC|ETH)\b", re.IGNORECASE)
-    crypto_re = re.compile(r"(BTC|ETH)\s*[\$]?\s*([\d{1,3},]*(?:\d+)(?:\.\d+)?)", re.IGNORECASE)
+    # Patterns to match numeric facts and currency/rate forms (simpler, clearer regexes)
+    money_sym_re = re.compile(r"(?:\$|€|£)\s?[0-9,]+(?:\.\d+)?")
+    code_re = re.compile(r"([0-9,]+(?:\.\d+)?)\s*(USD|VND|VNĐ|EUR|GBP|JPY|BTC|ETH)\b", re.IGNORECASE)
+    rate_re = re.compile(r"1\s*(USD|VND|VNĐ|EUR|GBP|JPY|BTC|ETH)\s*=\s*([0-9,]+(?:\.\d+)?)\s*(USD|VND|VNĐ|EUR|GBP|JPY|BTC|ETH)", re.IGNORECASE)
+    pair_re = re.compile(r"([0-9,]+(?:\.\d+)?)\s*(USD|VND|VNĐ|EUR|GBP|JPY|BTC|ETH)\b", re.IGNORECASE)
+    crypto_re = re.compile(r"(BTC|ETH)\s*[\$]?\s*([0-9,]+(?:\.\d+)?)", re.IGNORECASE)
 
     # Heuristic: require a keyword nearby for price-like queries
     price_keywords = re.compile(r"\b(price|giá|exchange rate|rate|today|hôm nay|now|current)\b", re.IGNORECASE)
