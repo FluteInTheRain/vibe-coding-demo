@@ -288,7 +288,7 @@ def build_tools() -> Tuple[Dict[str, Callable[..., Dict[str, Optional[str]]]], L
         },
         {
             "name": "web_search",
-            "description": "Mock web search returning a deterministic string.",
+            "description": "Call Tavily Search API and return a short synthesized summary or an extracted concise fact (e.g., price or exchange rate) when available.",
             "parameters": {
                 "type": "object",
                 "properties": {"query": {"type": "string", "description": "Search query"}},

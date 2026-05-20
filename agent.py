@@ -69,9 +69,6 @@ class ReActAgent:
             choice = choices[0]
             msg = choice.get("message") or {}
 
-            # Immediately append the model message (anti-pattern intentional)
-            messages.append(msg)
-
             finish_reason = choice.get("finish_reason")
             content = msg.get("content", "")
 
