@@ -168,7 +168,81 @@ def web_search(query: str) -> Dict[str, Optional[str]]:
     if not out_lines:
         return {"result": "", "error": "Tavily returned no results"}
 
-    # Return top 3 results as a single string
+    # Try to extract structured information (prices/exchange rates) from the
+    # titles/snippets before returning raw search snippets. Use regexes and a
+    # small heuristic pipeline to pick a concise answer when available.
+    import re
+
+    # Collect candidate text chunks to search for values (also include raw item fields)
+    candidate_text = "\n".join(out_lines)
+    for item in results[:5]:
+        if isinstance(item, dict):
+            # append title/snippet/url fields if present
+            candidate_text += "\n" + (item.get('title') or '')
+            candidate_text += "\n" + (item.get('snippet') or item.get('summary') or '')
+            candidate_text += "\n" + (item.get('url') or '')
+
+    # Patterns to match numeric facts and currency/rate forms
+    money_sym_re = re.compile(r"(?:\$|€|£)\s?[\d{1,3},]*(?:\d+)(?:\.\d+)?")
+    code_re = re.compile(r"([\d{1,3},]*(?:\d+)(?:\.\d+)?)\s*(USD|VND|VNĐ|EUR|GBP|JPY|BTC|ETH)\b", re.IGNORECASE)
+    rate_re = re.compile(r"1\s*(USD|VND|VNĐ|EUR|GBP|JPY|BTC|ETH)\s*=\s*([\d{1,3},]*(?:\d+)(?:\.\d+)?)\s*(USD|VND|VNĐ|EUR|GBP|JPY|BTC|ETH)", re.IGNORECASE)
+    pair_re = re.compile(r"([\d{1,3},]*(?:\d+)(?:\.\d+)?)\s*(USD|VND|VNĐ|EUR|GBP|JPY|BTC|ETH)\b", re.IGNORECASE)
+    crypto_re = re.compile(r"(BTC|ETH)\s*[\$]?\s*([\d{1,3},]*(?:\d+)(?:\.\d+)?)", re.IGNORECASE)
+
+    # Heuristic: require a keyword nearby for price-like queries
+    price_keywords = re.compile(r"\b(price|giá|exchange rate|rate|today|hôm nay|now|current)\b", re.IGNORECASE)
+
+    # Helper to check proximity: look for matches in the same snippet/title where keyword appears
+    def find_in_items():
+        for item in results[:5]:
+            text = ""
+            if isinstance(item, dict):
+                text = " ".join(filter(None, [item.get('title',''), item.get('snippet',''), item.get('summary','')]))
+            if not text:
+                continue
+            if not price_keywords.search(text):
+                continue
+            m = money_sym_re.search(text)
+            if m:
+                return m.group(0), item
+            m = code_re.search(text)
+            if m:
+                return f"{m.group(1)} {m.group(2).upper()}", item
+            m = rate_re.search(text)
+            if m:
+                return f"1 {m.group(1).upper()} = {m.group(2)} {m.group(3).upper()}", item
+            m = crypto_re.search(text)
+            if m:
+                return f"{m.group(1).upper()} {m.group(2)}", item
+        return None, None
+
+    # 1) Try proximity-based extraction
+    val, src_item = find_in_items()
+    if val:
+        src = None
+        if isinstance(src_item, dict):
+            src = src_item.get('url') or src_item.get('domain')
+        src_text = f" (source: {src})" if src else ""
+        return {"result": f"{val}{src_text} (extracted from search results)", "error": None}
+
+    # 2) Broad search across candidate_text
+    m = money_sym_re.search(candidate_text) or pair_re.search(candidate_text) or code_re.search(candidate_text)
+    if m:
+        # If pair_re/code_re returns groups handle accordingly
+        if isinstance(m, re.Match):
+            if m.re is pair_re or m.re is code_re:
+                grp = m.groups()
+                # take first numeric-group and currency if available
+                if len(grp) >= 2 and grp[1]:
+                    return {"result": f"{grp[0]} {grp[1].upper()} (extracted from search results)", "error": None}
+            return {"result": f"{m.group(0)} (extracted from search results)", "error": None}
+
+    # 3) crypto-specific
+    m = crypto_re.search(candidate_text)
+    if m:
+        return {"result": f"{m.group(1).upper()} {m.group(2)} (extracted from search results)", "error": None}
+
+    # No concise extraction: Return top 3 results as a single string
     result_text = "\n".join(out_lines[:3])
     return {"result": result_text, "error": None}
 

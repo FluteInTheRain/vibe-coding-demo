@@ -102,15 +102,23 @@ class ReActAgent:
                     tool_fn = self.tools_map[func_name]
                     observation = tool_fn(**args)  # type: ignore[arg-type]
 
-                observation_text = json.dumps(observation)
+                # Build a human-readable observation text to send back to the model:
+                # prefer the result string; if there's an error, send the error message.
+                if observation.get("error"):
+                    observation_text = f"ERROR: {observation.get('error')}"
+                else:
+                    observation_text = observation.get("result", "")
 
                 logger.info(f"[Iter {i}] Observation: {observation_text}")
 
                 # If this is the final_answer tool, return its result immediately.
                 if func_name == 'final_answer':
-                    return observation.get('result', '')
+                    return observation_text
 
-                logger.info(f"[Iter {i}] Observation: {observation_text}")
+                # If this is a web_search, return the synthesized search result to the
+                # user directly (avoids repeated web_search calls from the model).
+                if func_name == 'web_search':
+                    return observation_text
 
                 # Special-case: if the tool is get_current_year, compute the following
                 # calculation locally (year * 3) — this handles the common lab prompt
