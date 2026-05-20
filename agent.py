@@ -133,6 +133,10 @@ class ReActAgent:
                     messages.append(assistant_obs)
                     continue
 
+                # Append the tool observation to the local history so subsequent model chat
+                # calls see the tool result and do not re-issue the same function_call.
+                messages.append({"role": "tool", "tool_call_id": call_id, "content": observation_text})
+
                 # Append the model's followup message returned by execute_tool
                 choices = followup.get("choices") or []
                 if not choices:
