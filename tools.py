@@ -105,12 +105,72 @@ def get_current_year() -> Dict[str, Optional[str]]:
 
 
 def web_search(query: str) -> Dict[str, Optional[str]]:
-    """Mock web search used for lab exercises.
+    """Search Tavily for the query and return a synthesized top-results string.
 
-    This returns a deterministic fake result so tests and examples are stable.
-    Returns an envelope: {"result": str, "error": Optional[str]}.
+    This performs a synchronous POST to https://api.tavily.com/search using httpx.
+    Returns an envelope: {"result": str, "error": Optional[str]} where result is
+    a human-readable concatenation of the top 3-5 results.
+
+    Errors are returned in the envelope's "error" field and result is an empty
+    string in that case.
     """
-    return {"result": f"MOCK_SEARCH_RESULT for {query}", "error": None}
+    from dotenv import load_dotenv
+    import os
+    import httpx
+
+    load_dotenv()
+    api_key = os.getenv("TAVILY_API_KEY")
+    if not api_key:
+        return {"result": "", "error": "TAVILY_API_KEY not set"}
+
+    url = "https://api.tavily.com/search"
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    payload = {"query": query, "top_k": 5}
+
+    try:
+        resp = httpx.post(url, json=payload, headers=headers, timeout=5.0)
+    except httpx.TimeoutException as e:
+        return {"result": "", "error": f"Network timeout when calling Tavily: {e!s}"}
+    except httpx.RequestError as e:
+        return {"result": "", "error": f"Network error when calling Tavily: {e!s}"}
+    except Exception as e:
+        return {"result": "", "error": f"Network error when calling Tavily: {e!s}"}
+
+    if resp.status_code != 200:
+        body = None
+        try:
+            body = resp.text
+        except Exception:
+            body = "<unreadable body>"
+        return {"result": "", "error": f"Tavily API error: {resp.status_code} {body}"}
+
+    try:
+        data = resp.json()
+    except Exception as e:
+        return {"result": "", "error": f"Invalid JSON from Tavily: {e!s}"}
+
+    # Attempt to extract results list from known keys
+    results = data.get("results") or data.get("items") or []
+    if not isinstance(results, list):
+        return {"result": "", "error": "Unexpected Tavily response schema"}
+
+    out_lines: List[str] = []
+    for idx, item in enumerate(results[:5], start=1):
+        if not isinstance(item, dict):
+            continue
+        title = item.get("title") or item.get("headline") or item.get("name") or "(no title)"
+        snippet = item.get("snippet") or item.get("summary") or item.get("text") or ""
+        # shorten snippet to a reasonable length
+        if len(snippet) > 200:
+            snippet = snippet[:197] + "..."
+        out_lines.append(f"{idx}. {title} — {snippet}")
+
+    if not out_lines:
+        return {"result": "", "error": "Tavily returned no results"}
+
+    # Return top 3 results as a single string
+    result_text = "\n".join(out_lines[:3])
+    return {"result": result_text, "error": None}
 
 
 def final_answer(answer: str) -> Dict[str, Optional[str]]:
