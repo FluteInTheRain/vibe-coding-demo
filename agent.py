@@ -1,0 +1,112 @@
+from __future__ import annotations
+
+import json
+import logging
+from typing import Any, Dict, List
+
+from llm import OpenAIClient
+from tools import build_tools
+
+
+MAX_ITERATIONS = 10
+logger = logging.getLogger(__name__)
+
+
+class ReActAgent:
+    """A minimal ReAct loop agent that uses OpenAI function-calling to invoke tools.
+
+    This agent follows the lab's anti-patterns on purpose: it appends the model
+    response message immediately and uses the function call's provided id when
+    logging and when appending tool observations.
+    """
+
+    def __init__(self, client: OpenAIClient) -> None:
+        """Initialize the agent with an OpenAIClient.
+
+        Args:
+            client: An initialized OpenAIClient instance.
+        """
+        self.client = client
+        self.tools_map, self.tool_schemas = build_tools()
+
+    def run(self, question: str) -> str:
+        """Run the ReAct loop for the provided question and return the final answer.
+
+        Args:
+            question: The user's question to answer.
+
+        Returns:
+            The final answer text from the model (when it stops).
+
+        Raises:
+            RuntimeError: if the loop exceeds MAX_ITERATIONS or a function call
+                is missing a required id.
+        """
+        system_prompt = (
+            "You are a ReAct-style agent for a lab exercise. You may call these tools: "
+            + ", ".join(sorted(self.tools_map.keys()))
+            + ". Use function calling to invoke them and call 'final_answer' when done."
+        )
+
+        messages: List[Dict[str, Any]] = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": question},
+        ]
+
+        for i in range(1, MAX_ITERATIONS + 1):
+            resp = self.client.chat(messages, tools=self.tool_schemas)
+            # Extract the first choice and its message
+            choices = resp.get("choices") or []
+            if not choices:
+                raise RuntimeError("No choices in LLM response")
+            choice = choices[0]
+            msg = choice.get("message") or {}
+
+            # Immediately append the model message (anti-pattern intentional)
+            messages.append(msg)
+
+            finish_reason = choice.get("finish_reason")
+            content = msg.get("content", "")
+
+            if finish_reason == "stop":
+                return content
+
+            # Handle function calls if present
+            function_call = msg.get("function_call")
+            if function_call:
+                func_name = function_call.get("name")
+                arguments_text = function_call.get("arguments", "{}")
+
+                # Attempt to read a call id from the response (required)
+                call_id = function_call.get("id") or choice.get("id")
+                if not call_id:
+                    raise RuntimeError("Function call missing id; refusing to synthesize one")
+
+                try:
+                    args = json.loads(arguments_text)
+                except json.JSONDecodeError as e:
+                    raise RuntimeError(f"Invalid function call arguments JSON: {e}")
+
+                logger.info(f"[Iter {i}] Action: {func_name}({arguments_text})")
+
+                if func_name not in self.tools_map:
+                    observation = {"result": "", "error": f"Unknown tool: {func_name}"}
+                else:
+                    tool_fn = self.tools_map[func_name]
+                    observation = tool_fn(**args)  # type: ignore[arg-type]
+
+                observation_text = json.dumps(observation)
+
+                # Append the tool observation using the provided call id
+                tool_message = {"role": "tool", "tool_call_id": call_id, "content": observation_text}
+                messages.append(tool_message)
+
+                logger.info(f"[Iter {i}] Observation: {observation_text}")
+
+                # Continue to next iteration so the model can react to the observation
+                continue
+
+            # If no function call and not finished, continue to next iteration
+            logger.info(f"[Iter {i}] Model response (no function_call): {content}")
+
+        raise RuntimeError("Max iterations exceeded")
